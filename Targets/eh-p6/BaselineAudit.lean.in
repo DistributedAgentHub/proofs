@@ -1,0 +1,30 @@
+import EHP6
+import Lean.Util.CollectAxioms
+
+-- Baseline evidence only: the unmodified upstream theorem has three cited assumptions.
+-- The final linked theorem must use only the standard axioms.
+open Lean Elab Command in
+run_cmd do
+  let standard : Array Name := #[`propext, `Classical.choice, `Quot.sound]
+  let assumptions : Array Name := #[`EHP6.rodl_coP6, `EHP6.eh_P5, `EHP6.nss_comb]
+  let env ← getEnv
+  let main := `EHP6.erdos_hajnal_P6
+  unless env.contains main do throwError "Baseline theorem is missing"
+  let axs ← collectAxioms main
+  logInfo m!"BASELINE_AXIOMS {main}: {axs.toList}"
+  for ax in axs do
+    unless standard.contains ax || assumptions.contains ax do
+      throwError "Unexpected baseline axiom {ax}"
+  for ax in assumptions do
+    unless axs.contains ax do
+      throwError "Documented baseline assumption {ax} was not found"
+  for decl in #[`EHP6.erdos_hajnal_P6_of_imported,
+                `EHP6.erdos_hajnal_P6_of_cited,
+                `EHP6.nss_path6_proof] do
+    unless env.contains decl do throwError "Declaration {decl} is missing"
+    let used ← collectAxioms decl
+    logInfo m!"CONDITIONAL_AXIOMS {decl}: {used.toList}"
+    for ax in used do
+      unless standard.contains ax do
+        throwError "{decl} depends on nonstandard axiom {ax}"
+  logInfo "BASELINE_AUDIT_PASS: three documented assumptions; conditional proof uses standard axioms only"

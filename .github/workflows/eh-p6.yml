@@ -1,0 +1,67 @@
+name: EH-P6 baseline
+on:
+  push:
+    branches: [darc/eh-p6/astra]
+    paths:
+      - Targets/eh-p6/**
+      - .github/workflows/eh-p6.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Fetch the pinned upstream sources
+        run: |
+          set -euo pipefail
+          git init external
+          git -C external remote add origin https://github.com/machine-qed/erdos-hajnal-six-vertex-path.git
+          git -C external fetch --depth=1 origin d665bcc376edf02cfcd877263ae617d904e884fd
+          git -C external checkout --detach FETCH_HEAD
+          test "$(git -C external rev-parse HEAD)" = d665bcc376edf02cfcd877263ae617d904e884fd
+      - name: Install elan
+        run: |
+          set -euo pipefail
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build the original project using its pinned manifest
+        working-directory: external/formal
+        run: |
+          set -euo pipefail
+          sha256sum lake-manifest.json > manifest.before
+          lake exe cache get
+          lake build 2>&1 | tee "$GITHUB_WORKSPACE/baseline-build.log"
+          sha256sum --check manifest.before
+      - name: Check definitions and exact baseline assumptions
+        working-directory: external/formal
+        run: |
+          set -euo pipefail
+          lake env lean DefsCheck.lean 2>&1 | tee "$GITHUB_WORKSPACE/defs-check.log"
+          cp "$GITHUB_WORKSPACE/harness/Targets/eh-p6/BaselineAudit.lean.in" DarcBaselineAudit.lean
+          lake env lean DarcBaselineAudit.lean 2>&1 | tee "$GITHUB_WORKSPACE/baseline-audit.log"
+      - name: Record source versions
+        if: always()
+        run: |
+          {
+            echo "Baseline source: d665bcc376edf02cfcd877263ae617d904e884fd"
+            echo "Harness commit: $GITHUB_SHA"
+            echo "This checks the conditional proof and records three cited assumptions."
+            echo "This is not a proof that those assumptions have been discharged."
+            cat external/formal/lean-toolchain
+            sha256sum external/formal/lake-manifest.json
+          } | tee versions.txt >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eh-p6-baseline-evidence
+          path: |
+            baseline-build.log
+            baseline-audit.log
+            defs-check.log
+            versions.txt
