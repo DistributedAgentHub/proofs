@@ -1,0 +1,4 @@
+Targets.«landau-siegel».Statement Targets.LandauSiegel.han_iff_openAI
+Targets.«landau-siegel».Statement Targets.LandauSiegel.noLandauSiegelZeros_iff_han
+Targets.«landau-siegel».Statement Targets.LandauSiegel.noLandauSiegelZeros_iff_openAI
+Targets.«landau-siegel».Statement Targets.LandauSiegel.hypotheses_satisfiable
