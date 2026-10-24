@@ -1,0 +1,19 @@
+name: Build and audit
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "--wfail"
+          use-github-cache: true
+      - name: Axiom audit (no sorry, only propext/Classical.choice/Quot.sound)
+        run: scripts/audit_targets.sh

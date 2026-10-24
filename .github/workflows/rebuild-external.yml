@@ -1,0 +1,92 @@
+name: Rebuild external repo
+# Independent rebuild check: clone a repository at a pinned commit, build it with the toolchain
+# and Mathlib version that repository pins, and audit the axioms of its main theorem.
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: "Repository URL, e.g. https://github.com/platypii/integer-mult-bounds-lean"
+        required: true
+      commit:
+        description: "Full or abbreviated commit SHA to pin"
+        required: true
+      module:
+        description: "Lean module that contains the main theorem"
+        required: true
+      theorem:
+        description: "Fully qualified name of the main theorem"
+        required: true
+      namespace_prefix:
+        description: "Optional namespace; audit every declaration under it too"
+        required: false
+        default: ""
+      allow_native_decide:
+        description: "Allow Lean.ofReduceBool (only if the target declares native_decide)"
+        type: boolean
+        default: false
+      build_args:
+        description: "Arguments to lake build (default: the default targets)"
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: harness
+      - name: Clone pinned commit
+        env:
+          REPO_URL: ${{ inputs.repo_url }}
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          set -euo pipefail
+          git clone "$REPO_URL" target
+          git -C target checkout --detach "$COMMIT"
+          echo "TARGET_SHA=$(git -C target rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Swap (large Mathlib builds can exceed 16 GB)
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /mnt/swapfile-ci
+          sudo chmod 600 /mnt/swapfile-ci
+          sudo mkswap /mnt/swapfile-ci
+          sudo swapon /mnt/swapfile-ci
+          free -g
+      - name: Install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build
+        working-directory: target
+        env:
+          BUILD_ARGS: ${{ inputs.build_args }}
+        run: |
+          set -euo pipefail
+          echo "Toolchain: $(cat lean-toolchain)"
+          lake --version
+          lake exe cache get || echo "no Mathlib cache fetched; building from source"
+          lake build $BUILD_ARGS
+      - name: Axiom audit
+        env:
+          MODULE: ${{ inputs.module }}
+          THEOREM: ${{ inputs.theorem }}
+          PREFIX: ${{ inputs.namespace_prefix }}
+          NATIVE: ${{ inputs.allow_native_decide && '1' || '0' }}
+        run: harness/scripts/axiom_audit.sh target "$MODULE" "$THEOREM" "$NATIVE" "$PREFIX" | tee audit.log
+      - name: Summary
+        if: always()
+        working-directory: target
+        run: |
+          {
+            echo "## External rebuild"
+            echo "- Repo: ${{ inputs.repo_url }}"
+            echo "- Commit: $TARGET_SHA"
+            echo "- Toolchain: $(cat lean-toolchain)"
+            echo "- Mathlib: $(grep -A8 '"name": "mathlib"' lake-manifest.json | grep -E 'inputRev|rev' | tr -d ' \n')"
+            echo '```'
+            grep -h AXIOMS ../audit.log 2>/dev/null || echo "(no audit output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,2 @@
+# One line per main theorem: <Module> <fully qualified declaration>
+Targets.Example.Basic Targets.Example.add_comm_example
