@@ -98,6 +98,30 @@ jobs:
           # The manifest must be unchanged: we never re-resolve dependencies.
           git diff --exit-code lake-manifest.json
           du -sh .lake; df -h /
+      - name: Apply openai/math's committed dependency patches (what its post_update hook does, without lake update)
+        working-directory: oai/lean
+        run: |
+          set -euo pipefail
+          # openai/math's lakefile.lean patches third-party dependencies from lean/patches/<label>-lean4341.patch.
+          # 11 packages are patched at configuration time (already done by the lake call above); the 12 below are
+          # patched only by its `post_update` hook, i.e. by `lake update`, which we do not run. We replay that hook:
+          # same pinned commits (checked against the committed manifest), same patch files, same checks.
+          manifest_rev() { python3 -c "import json,sys;print([p['rev'] for p in json.load(open('lake-manifest.json'))['packages'] if p['name']==sys.argv[1]][0])" "$1"; }
+          for label in iut tate-curves-theta genl heights pi1 orbicurve-cores oka tempered-fundamental-groups elliptic-curves formal-schemes belyi \
+                       fixed-point-theorems PrimeNumberTheoremAnd Zeta3Irrational rellich-kondrachov carleson StrongPNT AbsorptionCutoff AINTLIB ClassFieldTheory schoenflies-lean SphereEversion gromov; do
+            dir=.lake/packages/$label; patch=$PWD/patches/$label-lean4341.patch
+            head=$(git -C "$dir" rev-parse HEAD); want=$(manifest_rev "$label")
+            [ "$head" = "$want" ] || { echo "::error::$label at $head, manifest pins $want"; exit 1; }
+            if git -C "$dir" apply --check --reverse "$patch" 2>/dev/null; then
+              echo "$label: patch already applied ($(sha256sum "$patch" | cut -c1-16))"
+            else
+              git -C "$dir" apply --check "$patch"
+              git -C "$dir" apply "$patch"
+              git -C "$dir" apply --check --reverse "$patch"
+              echo "$label: applied patch ($(sha256sum "$patch" | cut -c1-16))"
+            fi
+          done
+          git diff --exit-code lake-manifest.json
       - name: Probe systemd-run (README's AF_UNIX guard)
         id: sysd
         continue-on-error: true
