@@ -22,7 +22,7 @@ run_cmd do
     unless allowed.contains ax do throwError "{main} depends on disallowed axiom {ax}"
   let prefixStr := "$prefix"
   if prefixStr != "" then
-    let mut count := 0
+    let mut count : Nat := 0
     for (n, _) in env.constants.toList do
       if n.toString.startsWith prefixStr || n.toString.startsWith ("_private." ++ prefixStr) then
         for ax in ← collectAxioms n do
